@@ -3,7 +3,7 @@
 // canCreate、canModify 只決定畫面上要不要顯示按鈕。真正的把關在 backend：
 // 就算有人把按鈕弄出來按下去，backend 一樣會拒絕。
 
-import { formatTime } from "./format.js";
+import { authorName, formatTime } from "./format.js";
 import { getUser, isStaff } from "./session.js";
 
 export const announcements = {
@@ -14,7 +14,7 @@ export const announcements = {
   noun: "公告",
   hasReplies: false,
   deleteConfirm: "確定要刪除這則公告嗎？附圖會一起刪除，刪除後無法復原。",
-  listMeta: (item) => formatTime(item.created_at),
+  listMeta: (item) => [formatTime(item.created_at)],
   // 公告只有版主與管理員能發、改、刪。
   canCreate: () => isStaff(),
   canModify: () => isStaff(),
@@ -31,8 +31,10 @@ export const forum = {
   noun: "文章",
   hasReplies: true,
   deleteConfirm: "確定要刪除這篇文章嗎？底下的回覆與附圖會一起刪除，刪除後無法復原。",
-  listMeta: (item) =>
-    `${item.author_name}・${formatTime(item.created_at)}・${item.reply_count} 則回覆`,
+  listMeta: (item) => [
+    authorName(item.author_name, item.author_role),
+    `・${formatTime(item.created_at)}・${item.reply_count} 則回覆`,
+  ],
   // 文章每位成員都能發；改與刪要是作者本人、版主或管理員。
   canCreate: () => true,
   canModify: (entry) => isStaff() || entry.author_id === getUser().id,

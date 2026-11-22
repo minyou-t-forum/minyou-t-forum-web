@@ -106,10 +106,15 @@ async function loadDocuments(box) {
     list.replaceChildren(...items.map((file) => documentRow(file, removeFile)));
   }
 
+  // 清單第幾次重新載入。連著刪兩個檔案時會同時有兩次載入，比較晚回來的舊結果不能蓋掉新的。
+  let filesLoad = 0;
+
   /** 重新向伺服器要一次清單。上傳或刪除之後，以伺服器說的為準。 */
   async function reloadFiles() {
+    const thisLoad = ++filesLoad;
     try {
-      showFiles((await api.get("/documents")).items);
+      const data = await api.get("/documents");
+      if (thisLoad === filesLoad) showFiles(data.items);
     } catch {
       // 清單暫時拿不到就維持原樣，不要蓋掉剛剛顯示的上傳結果。重新整理頁面就會更新。
     }
@@ -202,15 +207,22 @@ function documentRow(file, onDelete) {
 
 // ── 成員管理 ─────────────────────────────────────────────
 
-async function loadMembers(box) {
+// 成員清單第幾次載入。清單可能在上一次還沒載完時又重新載入（例如連著兩列都發現資料被改過），
+// 比較晚回來的舊結果不能蓋掉比較新的那一次。
+let membersLoad = 0;
+
+/** 成員清單。notice 是重新載入時要放在最上面的說明（例如「剛剛被別人改過」）。 */
+async function loadMembers(box, notice = "") {
+  const thisLoad = ++membersLoad;
   showLoading(box);
   let data;
   try {
     data = await api.get("/admin/users");
   } catch (error) {
-    showError(box, error, () => loadMembers(box));
+    if (thisLoad === membersLoad) showError(box, error, () => loadMembers(box));
     return;
   }
+  if (thisLoad !== membersLoad) return;
 
   // 最上面那一行「還有幾位在等審核」。每次儲存之後重算一次。
   const statuses = new Map(data.items.map((item) => [item.id, item.status]));
@@ -223,14 +235,17 @@ async function loadMembers(box) {
   }
   updateSummary();
 
+  // 存檔時發現資料已經被別人改過：整份清單重新載入，畫面上才不會留著舊的值。
+  const reload = (message) => loadMembers(box, message);
   fill(
     box,
+    notice && el("p", { class: "save-message save-message-error", role: "alert", text: notice }),
     summary,
-    el("ul", { class: "member-list" }, ...data.items.map((item) => memberItem(item, updateSummary))),
+    el("ul", { class: "member-list" }, ...data.items.map((item) => memberItem(item, updateSummary, reload))),
   );
 }
 
-function memberItem(member, onSaved) {
+function memberItem(member, onSaved, onStale) {
   const me = getUser();
   const isSelf = member.id === me.id;
   // 版主不能動管理員的帳號。
@@ -244,6 +259,9 @@ function memberItem(member, onSaved) {
   const message = el("p", { class: "save-message", role: "status" });
   const saveButton = el("button", { class: "button button-primary", type: "button", text: "儲存" });
   const approveButton = el("button", { class: "button", type: "button", text: "通過審核" });
+  // 例如他的手機掉了：讓他在每一台裝置上登出，帳號不會被停用。自己的帳號用頁首的「登出」就好。
+  const signOutButton = el("button", { class: "button", type: "button", text: "登出他所有的裝置" });
+  signOutButton.hidden = isSelf || locked;
 
   /** 把畫面上這一列更新成 member 現在的內容。 */
   function show() {
@@ -286,12 +304,24 @@ function memberItem(member, onSaved) {
         unit_no: unitInput.value.trim(),
         role: roleSelect.value,
         status: statusSelect.value,
+        // 這一列載入時的樣子。這段期間被別人改過（例如剛被停用）的話，backend 會回 409，
+        // 不會用這個畫面上舊的值把別人的修改蓋回去。
+        expected: {
+          display_name: member.display_name,
+          unit_no: member.unit_no,
+          role: member.role,
+          status: member.status,
+        },
       });
       member = result.item;
       show();
       onSaved(member);
       message.textContent = result.changed ? "已儲存" : "沒有修改";
     } catch (error) {
+      if (error.status === 409) {
+        onStale(`${member.email} 的資料剛剛被別人改過，清單已經重新載入。請確認現在的內容之後再改一次。`);
+        return;
+      }
       message.textContent = error.message;
       message.classList.add("save-message-error");
     } finally {
@@ -300,7 +330,29 @@ function memberItem(member, onSaved) {
     }
   }
 
+  async function signOutEverywhere() {
+    const sure = await confirmDialog(
+      `確定要讓「${member.display_name}」在所有裝置上登出嗎？他重新用 Google 登入就能再用。`,
+      "登出",
+    );
+    if (!sure) return;
+    signOutButton.disabled = true;
+    message.textContent = "";
+    message.classList.remove("save-message-error");
+    try {
+      const result = await api.delete(`/admin/users/${member.id}/sessions`);
+      message.textContent =
+        result.revoked > 0 ? `已經讓他在 ${result.revoked} 個裝置上登出` : "他目前沒有登入中的裝置";
+    } catch (error) {
+      message.textContent = error.message;
+      message.classList.add("save-message-error");
+    } finally {
+      signOutButton.disabled = false;
+    }
+  }
+
   saveButton.addEventListener("click", save);
+  signOutButton.addEventListener("click", signOutEverywhere);
   approveButton.addEventListener("click", () => {
     statusSelect.value = "approved";
     save();
@@ -326,7 +378,7 @@ function memberItem(member, onSaved) {
       el("label", { class: "member-field" }, el("span", { class: "label", text: "狀態" }), statusSelect),
     ),
     locked && el("p", { class: "entry-meta", text: "版主不能修改管理員的帳號。" }),
-    el("div", { class: "actions" }, approveButton, saveButton),
+    el("div", { class: "actions" }, approveButton, saveButton, signOutButton),
     message,
   );
 }

@@ -162,12 +162,20 @@ function reauthenticate() {
   return reauthInFlight;
 }
 
-/** 蓋一層重新登入的視窗在目前的畫面上。重新登入成功回傳 true，選擇登出回傳 false。 */
+/**
+ * 蓋一層重新登入的視窗在目前的畫面上。
+ *
+ * 用同一個帳號登入回來，回傳 true：剛才沒送成功的請求會用新的憑證再送一次。
+ * 選擇登出，或登入的是另一個人，回傳 false：剛才的請求不再送出。
+ * 換了一個人時，剛才畫面上的內容（例如還沒送出的回覆）是前一個人的，不能用新的身分送出去，
+ * 所以把整個畫面照新的帳號重畫一次。
+ */
 function askToSignInAgain() {
+  const previousEmail = getAccount()?.email;
   return new Promise((resolve) => {
     const buttonBox = el("div", { class: "google-button" });
     const error = el("p", { class: "form-error", role: "alert" });
-    let signedIn = false;
+    let newAccount = null;
     const dialog = el(
       "dialog",
       { class: "dialog" },
@@ -182,16 +190,31 @@ function askToSignInAgain() {
     );
     dialog.addEventListener("close", () => {
       dialog.remove();
-      if (!signedIn) signOut();
-      resolve(signedIn);
+      if (!newAccount) {
+        signOut();
+        resolve(false);
+      } else if (newAccount.email !== previousEmail) {
+        applyAccount(newAccount);
+        // 說清楚發生了什麼：可能只是在 Google 的選單上點錯帳號，剛才打的字才不會不明不白地消失。
+        view.prepend(
+          el("p", {
+            class: "save-message save-message-error",
+            role: "alert",
+            text: `你登入的是另一個帳號（${newAccount.email}）。前一個帳號還沒送出的內容沒有送出，畫面已經換成這個帳號。`,
+          }),
+        );
+        resolve(false);
+      } else {
+        setAccount(newAccount);
+        renderAccountBox();
+        resolve(true);
+      }
     });
     document.body.append(dialog);
     dialog.showModal();
     showGoogleButton(buttonBox, {
       onSuccess: (account) => {
-        signedIn = true;
-        setAccount(account);
-        renderAccountBox();
+        newAccount = account;
         dialog.close();
       },
       onError: (message) => {

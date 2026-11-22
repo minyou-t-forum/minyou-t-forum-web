@@ -2,7 +2,7 @@
 
 import { api } from "./api.js";
 import { checkText, showCount } from "./form.js";
-import { formatTime, textToNodes } from "./format.js";
+import { authorName, formatTime, textToNodes } from "./format.js";
 import { getUser, isStaff } from "./session.js";
 import { confirmDialog, el } from "./ui.js";
 
@@ -29,7 +29,7 @@ export function replySection(postId, replies) {
     const item = el(
       "li",
       { class: "reply" },
-      el("p", { class: "entry-meta", text: `${reply.author_name}・${formatTime(reply.created_at)}` }),
+      el("p", { class: "entry-meta" }, authorName(reply.author_name, reply.author_role), `・${formatTime(reply.created_at)}`),
       el("div", { class: "body-text" }, textToNodes(reply.body)),
       // 回覆只有作者本人、版主、管理員能刪。這裡只決定要不要顯示按鈕，把關在 backend。
       (isStaff() || reply.author_id === getUser().id) && el("div", { class: "actions" }, deleteButton),

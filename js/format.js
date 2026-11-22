@@ -1,4 +1,6 @@
-// 顯示用的格式：時間、檔案大小、字數、把內文裡的網址變成連結。
+// 顯示用的格式：時間、檔案大小、字數、作者的名字、把內文裡的網址變成連結。
+
+import { el } from "./ui.js";
 
 // 時間一律顯示台灣時間，不管使用者的裝置設在哪個時區。
 const timeFormat = new Intl.DateTimeFormat("zh-TW", {
@@ -20,6 +22,17 @@ export function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const STAFF_ROLE_LABELS = { moderator: "版主", admin: "管理員" };
+
+/**
+ * 作者的名字。版主與管理員的名字後面多一個角色的標籤。
+ * 標籤是另外畫出來的元素，不是名字的一部分：住戶把名字取成「某某（管理員）」也做不出這個標籤。
+ */
+export function authorName(name, role) {
+  const label = STAFF_ROLE_LABELS[role];
+  return el("span", { class: "author" }, name, label && el("span", { class: "role-badge", text: label }));
 }
 
 /**

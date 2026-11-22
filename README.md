@@ -62,6 +62,7 @@ minyou-t-forum/                 總覽用的 repo，把下面兩支掛在一起�
 所有對後端的請求都走 `js/api.js`。它處理兩種情況：
 
 - **401：憑證失效了。** 在目前的畫面上蓋一層重新登入的視窗。登入成功後，用同樣的內容把剛才的請求再送一次。使用者正在寫的文章不會因為登入過期而不見。同時有好幾個請求撞到時只跳一次視窗。
+  - 只有登入回來的是**同一個人**（email 一樣）才會重送（`js/main.js` 的 `askToSignInAgain`）。在共用的裝置上換了另一個人登入，剛才畫面上的內容是前一個人的，不能用新的身分送出去：那些請求直接放棄，整個畫面照新的帳號重畫，最上面說明「你登入的是另一個帳號」（可能只是在 Google 的選單上點錯帳號）。這是在本機用瀏覽器模擬兩種情況確認過的：換人時草稿沒有被發出去、畫面換成新的帳號；同一個人時剛才那篇照常發出。
 - **403，而且代碼是 `unregistered`、`pending`、`disabled`：帳號狀態變了**（例如剛被停用）。重新確認一次狀態，換到對應的畫面。
 
 ### 畫面上的鎖只是顯示效果
@@ -69,6 +70,16 @@ minyou-t-forum/                 總覽用的 repo，把下面兩支掛在一起�
 一般使用者看不到「新增公告」的按鈕，也看不到別人文章上的「刪除」。這只是為了不顯示按了也沒用的按鈕（`js/boards.js` 的 `canCreate`、`canModify`）。
 
 真正的把關在後端：就算有人用開發者工具把按鈕弄出來按下去，或直接呼叫 API，後端一樣會拒絕。前端的判斷永遠不能當成安全機制。
+
+### 版主與管理員的名字旁邊為什麼有標籤
+
+文章、回覆、公告的作者如果是版主或管理員，名字後面會多一個紅色的角色標籤（`js/format.js` 的 `authorName`）。標籤是另外畫出來的元素，不是名字的一部分：住戶把顯示名稱取成「管理員」或「某某（管理員）」，也做不出這個標籤。角色是後端回傳的作者**現在**的角色。
+
+### 兩個人同時改同一筆資料時
+
+- **編輯公告或文章**：送出時帶著打開編輯頁時看到的版本號（`version`）。這段期間被別人改過，後端回 409，畫面上顯示說明，剛才打的字留著，可以先複製起來再重新整理。
+- **後台改成員**：送出時帶著這一列載入時的樣子（`expected`）。這段期間被別人改過（例如剛被停用），後端回 409，整份清單重新載入，最上面說明是哪一位剛被改過。不會用畫面上舊的值把別人的修改蓋回去。
+- **後台的「登出他所有的裝置」**：例如他的手機掉了。他每一台裝置都要重新登入，帳號不會被停用。自己的那一列沒有這顆按鈕，自己用頁首的「登出」。
 
 ### 換畫面時為什麼換一個新的容器
 
@@ -136,7 +147,7 @@ minyou-t-forum/                 總覽用的 repo，把下面兩支掛在一起�
 | `js/pictures.js` | 公告與文章的附圖：選圖、縮小、顯示 |
 | `js/documents.js` | 社區文檔 |
 | `js/admin.js` | 後台：新增公告、上傳與刪除文檔、成員管理 |
-| `js/form.js`、`js/format.js`、`js/ui.js` | 表單檢查、顯示格式、畫面的小工具 |
+| `js/form.js`、`js/format.js`、`js/ui.js` | 表單檢查、顯示格式（包含作者名字旁的角色標籤）、畫面的小工具 |
 
 ### 已知限制
 
@@ -282,6 +293,7 @@ If the backend can't be reached at start-up, the user is not signed out: being u
 Every request to the backend goes through `js/api.js`, which handles two cases:
 
 - **401: the token is no longer valid.** A sign-in dialog is laid over the current screen. After a successful sign-in, the same request is sent again with the same content. A post being written is not lost because the session expired. When several requests hit this at once, only one dialog appears.
+  - The request is sent again only if the **same person** signed back in (the same email; `askToSignInAgain` in `js/main.js`). If a different person signs in on a shared device, what is on the screen belongs to the previous person and must not be sent under the new identity: those requests are dropped and the whole screen is redrawn for the new account, with a note at the top saying a different account signed in (it may just be a slip in Google's account chooser). Both cases were checked locally by simulating them in a browser: when the person changed, the draft was not posted and the screen switched to the new account; when it was the same person, the post went out as before.
 - **403 with the code `unregistered`, `pending` or `disabled`: the account's state changed** (for example, it was just disabled). The state is checked again and the matching screen is shown.
 
 ### Locks in the Page Are Only Cosmetic
@@ -289,6 +301,16 @@ Every request to the backend goes through `js/api.js`, which handles two cases:
 A regular user sees no "new announcement" button and no "delete" on other people's posts. That is only to avoid showing buttons that would do nothing (`canCreate` and `canModify` in `js/boards.js`).
 
 The real gate is the backend: even if someone reveals a button with developer tools and clicks it, or calls the API directly, the backend still refuses. A check in the frontend must never be treated as a security mechanism.
+
+### Why Moderators and Administrators Have a Tag Beside Their Names
+
+When the author of a post, reply or announcement is a moderator or administrator, a red role tag follows the name (`authorName` in `js/format.js`). The tag is a separately drawn element, not part of the name: a resident who sets their display name to "管理員" or "Someone (管理員)" still can't produce it. The role is the author's **current** role as reported by the backend.
+
+### When Two People Change the Same Thing
+
+- **Editing an announcement or post**: the edit carries the version number (`version`) seen when the edit page opened. If someone else changed it meanwhile, the backend answers 409, the page shows an explanation, and the text just typed stays so it can be copied before reloading.
+- **Changing a member on the admin page**: the save carries what that row looked like when it loaded (`expected`). If someone else changed it meanwhile (for example, just disabled them), the backend answers 409, the whole list reloads, and a note at the top says who was just changed. A stale page can't write old values back over someone else's change.
+- **"Sign them out of every device" on the admin page**: for example when their phone is lost. Every device of theirs has to sign in again; the account is not disabled. Your own row has no such button; use "Sign out" in the header instead.
 
 ### Why Each Screen Gets a New Container
 
@@ -356,7 +378,7 @@ This does nothing for "the first visitor after a long quiet period": the backend
 | `js/pictures.js` | Pictures on announcements and posts: choosing, shrinking, displaying |
 | `js/documents.js` | Community documents |
 | `js/admin.js` | Admin page: new announcement, uploading and deleting documents, member management |
-| `js/form.js`, `js/format.js`, `js/ui.js` | Form checks, display formats, small screen helpers |
+| `js/form.js`, `js/format.js`, `js/ui.js` | Form checks, display formats (including the role tag beside an author's name), small screen helpers |
 
 ### Known Limitations
 

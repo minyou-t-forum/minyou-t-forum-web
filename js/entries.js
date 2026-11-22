@@ -2,7 +2,7 @@
 
 import { api } from "./api.js";
 import { checkText, showCount } from "./form.js";
-import { formatTime, textToNodes } from "./format.js";
+import { authorName, formatTime, textToNodes } from "./format.js";
 import { pictureGallery, picturePicker } from "./pictures.js";
 import { replySection } from "./replies.js";
 import { confirmDialog, el, fill, showError, showLoading } from "./ui.js";
@@ -49,7 +49,7 @@ export function listView(board, container) {
             "a",
             { class: "entry", href: `${board.route}/${item.id}` },
             el("span", { class: "entry-title", text: item.title }),
-            el("span", { class: "entry-meta", text: board.listMeta(item) }),
+            el("span", { class: "entry-meta" }, ...board.listMeta(item)),
           ),
         ),
       );
@@ -108,7 +108,12 @@ export async function detailView(board, container, id) {
       "article",
       { class: "entry-detail" },
       el("h2", { class: "detail-title", text: entry.title }),
-      el("p", { class: "entry-meta", text: `${entry.author_name}・${formatTime(entry.created_at)}` }),
+      el(
+        "p",
+        { class: "entry-meta" },
+        authorName(entry.author_name, entry.author_role),
+        `・${formatTime(entry.created_at)}`,
+      ),
       el("div", { class: "body-text" }, textToNodes(entry.body)),
       images.length > 0 && pictureGallery(`${board.api}/${id}`, images),
       board.canModify(entry) &&
@@ -189,6 +194,9 @@ export async function editorView(board, container, id = null) {
     formError.textContent = picker ? "上傳中，請稍候…" : "";
     try {
       const payload = { title, body };
+      // 編輯時帶著打開時看到的版本號：這段期間被別人改過的話，backend 會回 409，
+      // 不會直接蓋掉別人改的內容。畫面上打的字會留著，使用者可以先複製起來。
+      if (isEdit) payload.version = entry.version;
       if (picker) payload.images = await picker.encode();
       const saved = isEdit
         ? await api.put(`${board.api}/${id}`, payload)
