@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <!--
     只准這一頁載入實際用到的東西：自己的檔案、Google 登入的元件、backend。
-    附圖是先下載再用 blob: 網址顯示的，所以 img-src 要有 blob:。
+    附圖是先下載再用 blob: 網址顯示的，所以 img-src 要有 blob:；Google 登入元件會用 data: 的圖畫標誌，所以也要有 data:。
     connect-src 的 http://localhost:5180 是本機開發時的 backend（見 js/config.js）。
   -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; img-src 'self' blob:; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; frame-src https://accounts.google.com/gsi/; connect-src 'self' https://minyou-t-forum-backend.onrender.com http://localhost:5180 https://accounts.google.com/gsi/">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; img-src 'self' data: blob:; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; frame-src https://accounts.google.com/gsi/; connect-src 'self' https://minyou-t-forum-backend.onrender.com http://localhost:5180 https://accounts.google.com/gsi/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>老爺華廈論壇</title>
   <link rel="icon" type="image/png" href="favicon.png">
