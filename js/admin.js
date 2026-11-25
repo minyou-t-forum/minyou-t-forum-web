@@ -81,7 +81,12 @@ async function loadDocuments(box) {
 
   // 給人看的上限，例如「10 MB」。
   const limit = `${Math.round(info.max_bytes / 1024 / 1024)} MB`;
-  const input = el("input", { type: "file", multiple: true, hidden: true });
+  // 收哪些副檔名由伺服器決定。選檔案的視窗只列出這些，選了別的也會先擋下來。
+  const extensions = info.extensions || [];
+  // 伺服器沒給清單（例如還是舊版）就不在這裡擋，交給伺服器判斷。
+  const accepted = (name) =>
+    extensions.length === 0 || extensions.some((extension) => name.toLowerCase().endsWith(extension));
+  const input = el("input", { type: "file", multiple: true, hidden: true, accept: extensions.join(",") });
   const uploadButton = el("button", {
     class: "button button-primary",
     type: "button",
@@ -144,6 +149,10 @@ async function loadDocuments(box) {
     let uploaded = 0;
     for (const [index, file] of chosen.entries()) {
       report([`上傳中（${index + 1}/${chosen.length}）：${file.name}`]);
+      if (!accepted(file.name)) {
+        problems.push(`「${file.name}」這種檔案不能上傳，只收 ${extensions.map((e) => e.slice(1)).join("、")}`);
+        continue;
+      }
       // 太大的先擋下來，不用等整個檔案傳完才被伺服器拒絕。
       if (file.size > info.max_bytes) {
         problems.push(`「${file.name}」太大了，一個檔案最多 ${limit}`);
@@ -248,8 +257,9 @@ async function loadMembers(box, notice = "") {
 function memberItem(member, onSaved, onStale) {
   const me = getUser();
   const isSelf = member.id === me.id;
-  // 版主不能動管理員的帳號。
-  const locked = me.role !== "admin" && member.role === "admin";
+  const isAdmin = me.role === "admin";
+  // 版主只能管一般使用者：管理員與其他版主的帳號只有管理員能動。
+  const locked = !isAdmin && !isSelf && member.role !== "member";
 
   const nameInput = el("input", { class: "input", type: "text", "aria-label": "顯示名稱" });
   const unitInput = el("input", { class: "input", type: "text", "aria-label": "戶號" });
@@ -268,10 +278,8 @@ function memberItem(member, onSaved, onStale) {
     nameInput.value = member.display_name;
     unitInput.value = member.unit_no;
 
-    // 只有管理員能指定管理員，所以版主的選單裡沒有這一項（除非這個人本來就是管理員）。
-    const roles = Object.keys(ROLE_LABELS).filter(
-      (role) => role !== "admin" || me.role === "admin" || member.role === "admin",
-    );
+    // 角色只有管理員能改，版主的選單裡只有這個人現在的角色。
+    const roles = isAdmin ? Object.keys(ROLE_LABELS) : [member.role];
     roleSelect.replaceChildren(...roles.map((role) => el("option", { value: role, text: ROLE_LABELS[role] })));
     roleSelect.value = member.role;
 
@@ -291,6 +299,7 @@ function memberItem(member, onSaved, onStale) {
     for (const control of [nameInput, unitInput, saveButton]) control.disabled = locked;
     // 不能改自己的角色與狀態：唯一的管理員把自己降級或停用，就沒有人能改回來了。
     for (const control of [roleSelect, statusSelect]) control.disabled = locked || isSelf;
+    if (!isAdmin) roleSelect.disabled = true;
   }
 
   async function save() {
@@ -377,7 +386,7 @@ function memberItem(member, onSaved, onStale) {
       el("label", { class: "member-field" }, el("span", { class: "label", text: "角色" }), roleSelect),
       el("label", { class: "member-field" }, el("span", { class: "label", text: "狀態" }), statusSelect),
     ),
-    locked && el("p", { class: "entry-meta", text: "版主不能修改管理員的帳號。" }),
+    locked && el("p", { class: "entry-meta", text: "版主不能修改管理員與其他版主的帳號。" }),
     el("div", { class: "actions" }, approveButton, saveButton, signOutButton),
     message,
   );
