@@ -1,4 +1,4 @@
-// 後台。版主與管理員用它新增公告、上傳與刪除文檔、管理成員。
+// 後台。版主與管理員用它新增公告、上傳與刪除文檔、管理成員；管理員另外看得到操作紀錄。
 //
 // 這裡把不能改的欄位鎖起來只是為了好操作；能不能改，最後是 backend 決定的。
 
@@ -13,6 +13,7 @@ const STATUS_LABELS = { pending: "審核中", approved: "已審核", disabled: "
 export function adminView(container) {
   const documentsBox = el("div");
   const membersBox = el("div");
+  const actionsBox = getUser().role === "admin" && el("div");
   fill(
     container,
     el("div", { class: "toolbar" }, el("h2", { class: "page-title", text: "後台" })),
@@ -35,9 +36,21 @@ export function adminView(container) {
       el("h3", { class: "section-title", text: "成員管理" }),
       membersBox,
     ),
+    actionsBox &&
+      el(
+        "section",
+        { class: "card admin-section" },
+        el("h3", { class: "section-title", text: "操作紀錄" }),
+        el("p", {
+          class: "card-text",
+          text: "版主與管理員做過的事，以及被拒絕的操作，保留 180 天。只有管理員看得到。",
+        }),
+        actionsBox,
+      ),
   );
   loadDocuments(documentsBox);
   loadMembers(membersBox);
+  if (actionsBox) loadActions(actionsBox);
 }
 
 // ── 文檔 ─────────────────────────────────────────────────
@@ -395,4 +408,74 @@ function memberItem(member, onSaved, onStale) {
 /** 給頁首顯示用：角色的中文名稱。 */
 export function roleLabel(role) {
   return ROLE_LABELS[role] || role;
+}
+
+// ── 操作紀錄（只有管理員看得到）────────────────────────────
+
+const ACTION_LABELS = {
+  "announcement.create": "發布公告",
+  "announcement.update": "修改公告",
+  "announcement.delete": "刪除公告",
+  "post.update": "修改別人的文章",
+  "post.delete": "刪除別人的文章",
+  "reply.delete": "刪除別人的回覆",
+  "document.upload": "上傳文檔",
+  "document.delete": "刪除文檔",
+  "user.approve": "審核通過",
+  "user.disable": "停用帳號",
+  "user.enable": "恢復帳號",
+  "user.role": "改角色",
+  "user.profile": "改名稱或戶號",
+  "user.update": "修改帳號",
+  "user.sign_out": "讓他登出所有裝置",
+  "action_log.view": "看操作紀錄",
+};
+
+// 對象的編號前面加上它是什麼，例如「成員 #3」。文檔的對象是檔名或檔案代號，直接顯示。
+const TARGET_KINDS = { announcement: "公告", post: "文章", reply: "回覆", user: "成員" };
+
+/** 一頁一頁列出紀錄，新的在前面。只能看，不能改。 */
+function loadActions(box) {
+  const list = el("ul", { class: "document-list" });
+  const more = el("div");
+  fill(box, list, more);
+  let lastId = null;
+
+  async function loadPage() {
+    showLoading(more);
+    let page;
+    try {
+      page = await api.get(lastId === null ? "/admin/actions" : `/admin/actions?before=${lastId}`);
+    } catch (error) {
+      showError(more, error, loadPage);
+      return;
+    }
+    for (const item of page.items) {
+      list.append(actionRow(item));
+      lastId = item.id;
+    }
+    if (lastId === null) fill(more, el("p", { class: "status", text: "目前沒有紀錄" }));
+    else if (page.has_more)
+      fill(more, el("button", { class: "button", type: "button", text: "載入更多", onClick: loadPage }));
+    else fill(more);
+  }
+
+  loadPage();
+}
+
+function actionRow(item) {
+  const kind = TARGET_KINDS[item.action.split(".")[0]];
+  const target = item.target_id === null ? "" : kind ? `${kind} #${item.target_id}` : item.target_id;
+  return el(
+    "li",
+    { class: "document-row" },
+    el(
+      "div",
+      { class: "document-info" },
+      el("span", { class: "member-email", text: item.actor_name || item.actor_email }),
+      el("span", { class: "entry-meta message-line", text: formatTime(item.created_at) }),
+    ),
+    el("span", { text: [ACTION_LABELS[item.action] || item.action, target].filter(Boolean).join("　") }),
+    item.outcome === "denied" && el("span", { class: "badge", text: "被拒絕" }),
+  );
 }
